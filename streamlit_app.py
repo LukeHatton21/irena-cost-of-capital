@@ -49,7 +49,7 @@ country_selection = st.selectbox(
 country_selection = visualiser.crp_dictionary.get(country_selection)
 
 # Set out input tabs and calculate the share of cost of capital
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["💸 Blended Finance", "📊 WACC", "🌐 Map", "🥇Comparison", "🔭Projections", "🛠️Technologies", "📝 About"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["💸 Blended Finance", "📊 WACC", "🌐 Underlying Costs", "🥇Comparison", "🔭Projections", "🛠️Technologies", "📝 About"])
 yearly_waccs = wacc_predictor.calculate_historical_waccs(year, technology)
 with tab1:
     st.title("Ratio of Blended Finance")
@@ -59,13 +59,12 @@ with tab1:
     shares_df = visualiser.vertical_sliders()
 with tab2:
     st.title("Weighted Cost of Capital")
-    df, overall_cost = wacc_predictor.calculate_weighted_average(shares_df=shares_df, year=year, technology=technology, 
+    df, overall_cost, breakdown = wacc_predictor.calculate_weighted_average(shares_df=shares_df, year=year, technology=technology, 
                                                   country_code=country_selection, concessionality=concessionality)
     #df = pd.DataFrame(data={"source": ["International Commercial", "International Public", "Domestic Commercial", "Domestic Public", "Grant"], "Share": [25, 25, 20, 25, 5], "Cost of Capital": [10, 7, 8, 9, 0.1]})
     visualiser.show_source_average(df, overall=overall_cost)
 with tab3:
-    st.title("Cost of Capital from International Commercial Investors")
-    visualiser.display_map(yearly_waccs, technology)
+    visualiser.plot_cost_components_breakdown(breakdown)
 with tab4:
     st.header("Global Estimates")
     selected_countries = st.multiselect("Countries to compare", options=yearly_waccs['Country code'].values, default=["USA", "IND", "GBR", "JPN", "CHN", "BRA"])

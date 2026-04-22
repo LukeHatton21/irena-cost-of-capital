@@ -434,3 +434,118 @@ class VisualiserClass:
 
 
         st.write(chart_with_double_x_axis)
+
+    def plot_cost_components_breakdown(self, breakdown):
+        # Ensure numeric values for plotting and normalize column names
+        breakdown = breakdown.copy()
+        breakdown = breakdown.drop(columns=['country code', 'Country code'], errors='ignore')
+        breakdown = breakdown.apply(pd.to_numeric, errors='coerce')
+
+        # Filter debt and equity
+        debt_df = breakdown[breakdown.index.str.startswith("Debt -")]
+        equity_df = breakdown[breakdown.index.str.startswith("Equity -")]
+
+        # Define color map for components
+        color_map = {
+            'Risk Free Rate': 'blue',
+            'Country Risk': 'green',
+            'Immaturity Premium': 'cyan',
+            'Concessionality': 'magenta',
+            'Country Default Spread': 'red',
+            'Equity Risk Premium': 'orange',
+            'Technology Risk Premium': 'purple',
+            'Maturity Premium': 'brown',
+        }
+
+        def format_label(label):
+            label = label.replace("International Commercial", "International<br>Commercial")
+            label = label.replace("Domestic Commercial", "Domestic<br>Commercial")
+            label = label.replace("International Public", "International<br>Public")
+            label = label.replace("Domestic Public", "Domestic<br>Public")
+            if "<br>" not in label and " " in label:
+                parts = label.split(" ")
+                mid = len(parts) // 2
+                label = "<br>".join([" ".join(parts[:mid]), " ".join(parts[mid:])])
+            return label
+
+        # Create subplots
+        fig = make_subplots(rows=1, cols=2, subplot_titles=("Debt Cost Components", "Equity Cost Components"))
+
+        shown_legends = set()
+
+        # For debt
+        debt_df.drop(columns=["Country Code"], inplace=True, errors='ignore')
+        for idx in debt_df.index:
+            row = debt_df.loc[idx]
+            components = row.dropna()
+            pos_base = 0
+            neg_base = 0
+            for comp in components.index:
+                comp_value = components[comp]
+                if pd.isna(comp_value):
+                    continue
+                if comp_value >= 0:
+                    base = pos_base
+                    pos_base += comp_value
+                else:
+                    base = neg_base
+                    neg_base += comp_value
+                show_legend = comp not in shown_legends
+                if show_legend:
+                    shown_legends.add(comp)
+                fig.add_trace(go.Bar(
+                    x=[format_label(idx.replace("Debt - ", ""))],
+                    y=[comp_value],
+                    name=comp,
+                    marker_color=color_map.get(comp, 'gray'),
+                    offsetgroup=0,
+                    base=base,
+                    showlegend=show_legend
+                ), row=1, col=1)
+
+        # For equity
+        equity_df.drop(columns=["Country Code"], inplace=True, errors='ignore')
+        for idx in equity_df.index:
+            row = equity_df.loc[idx]
+            components = row.dropna()
+            pos_base = 0
+            neg_base = 0
+            for comp in components.index:
+                comp_value = components[comp]
+                if pd.isna(comp_value):
+                    continue
+                if comp_value >= 0:
+                    base = pos_base
+                    pos_base += comp_value
+                else:
+                    base = neg_base
+                    neg_base += comp_value
+                show_legend = comp not in shown_legends
+                if show_legend:
+                    shown_legends.add(comp)
+                fig.add_trace(go.Bar(
+                    x=[format_label(idx.replace("Equity - ", ""))],
+                    y=[comp_value],
+                    name=comp,
+                    marker_color=color_map.get(comp, 'gray'),
+                    offsetgroup=1,
+                    base=base,
+                    showlegend=show_legend
+                ), row=1, col=2)
+
+        fig.update_layout(
+            barmode='stack',
+            title_text="Cost Components Breakdown",
+            xaxis=dict(tickangle=0, automargin=True),
+            xaxis2=dict(tickangle=0, automargin=True),
+            legend=dict(
+                orientation='h',
+                x=0.5,
+                y=-0.5,
+                xanchor='center',
+                yanchor='bottom',
+                traceorder='normal',
+            ),
+            margin=dict(t=80)
+        )
+        st.plotly_chart(fig)

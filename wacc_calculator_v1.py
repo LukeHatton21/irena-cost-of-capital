@@ -194,7 +194,8 @@ class WaccCalculator:
 
         # Include in a pandas dataframe
         results_df = pd.DataFrame(data={"Country code": country_code, "Risk_Free":risk_free_contributions, "Country_Risk": crp_contributions, "Equity Risk": erp_contributions, "Lenders Margin": lm_contributions, 
-                                        "Technology_Risk": tech_premium_contributions, "Equity_Cost": equity_cost, "Debt_Cost": debt_cost, "WACC": estimated_wacc, "Debt_Share": debt_share, "Tax_Rate": tax_rate, "Year":year})
+                                        "Technology_Risk": tech_premium_contributions, "Equity_Cost": equity_cost, "Debt_Cost": debt_cost, "WACC": estimated_wacc, "Debt_Share": debt_share, "Tax_Rate": tax_rate, "Year":year,
+                                        "CDS":cds, "CRP": erp, "ERP": erp, "Tech_Premium": technology_premium.values[0], "LM": self.lenders_margin})
         
 
         return results_df
