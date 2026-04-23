@@ -455,6 +455,8 @@ class VisualiserClass:
             'Equity Risk Premium': 'orange',
             'Technology Risk Premium': 'purple',
             'Maturity Premium': 'brown',
+            "Merchant Risk": 'pink',
+            "Currency Risk Premium": 'gray',
         }
 
         def format_label(label):
@@ -500,7 +502,9 @@ class VisualiserClass:
                     marker_color=color_map.get(comp, 'gray'),
                     offsetgroup=0,
                     base=base,
-                    showlegend=show_legend
+                    customdata=[comp_value],
+                    showlegend=show_legend,
+                    hovertemplate="<b>%{fullData.name}</b><br>Height: %{customdata:.2f}<extra></extra>"
                 ), row=1, col=1)
 
         # For equity
@@ -530,8 +534,41 @@ class VisualiserClass:
                     marker_color=color_map.get(comp, 'gray'),
                     offsetgroup=1,
                     base=base,
-                    showlegend=show_legend
+                    customdata=[comp_value],
+                    showlegend=show_legend,
+                    hovertemplate="<b>%{fullData.name}</b><br>Height: %{customdata:.2f}<extra></extra>"
                 ), row=1, col=2)
+
+        # Calculate global min and max for aligned y-axes
+        all_values = []
+        for df in [debt_df, equity_df]:
+            for idx in df.index:
+                row = df.loc[idx]
+                components = row.dropna()
+                pos_base = 0
+                neg_base = 0
+                for comp_value in components.values:
+                    if pd.isna(comp_value):
+                        continue
+                    if comp_value >= 0:
+                        all_values.append(pos_base + comp_value)
+                        pos_base += comp_value
+                    else:
+                        all_values.append(neg_base + comp_value)
+                        neg_base += comp_value
+                all_values.append(pos_base)
+                all_values.append(neg_base)
+        
+        if all_values:
+            global_min = min(all_values)
+            global_max = max(all_values)
+            # Add some padding
+            padding = (global_max - global_min) * 0.1
+            y_min = global_min - padding
+            y_max = global_max + padding
+        else:
+            y_min = None
+            y_max = None
 
         fig.update_layout(
             barmode='stack',
@@ -548,4 +585,9 @@ class VisualiserClass:
             ),
             margin=dict(t=80)
         )
+        
+        # Update both y-axes to have the same range
+        fig.update_yaxes(range=[y_min, y_max], row=1, col=1)
+        fig.update_yaxes(range=[y_min, y_max], row=1, col=2)
+        
         st.plotly_chart(fig)

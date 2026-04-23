@@ -465,7 +465,7 @@ class WaccPredictor:
         return storage_df
     
 
-    def calculate_weighted_average(self, shares_df, year, technology, country_code, concessionality):
+    def calculate_weighted_average(self, shares_df, year, technology, country_code, concessionality, merchant_risk=None, currency_risk=None):
 
         # Set concessionality
         if concessionality is None:
@@ -477,9 +477,14 @@ class WaccPredictor:
                                   interest_rates=True, GDP_change=True, renewable_targets=True)
         else:
             commercial_results = self.calculate_yearly_wacc(year, technology, country_code)
+
+
+        # Calculate currency risk
+        currency_risk_estimates = self.calculator.estimate_currency_risk_premium(country_code,year,lookback=10,risk_aversion=0.5)
+        currency_risk_premium = currency_risk_estimates["currency_risk_premium"] * 100
         
         # Extract underlying parameters
-        breakdown = self.calculate_cost_components(commercial_results, shares_df.source.values, concessionality)
+        breakdown = self.calculate_cost_components(commercial_results, shares_df.source.values, concessionality, currency_risk_premium, merchant_risk=merchant_risk, currency_risk=currency_risk)
 
         # Calculate the cost of capital from each source, first extract key parameters
         tax_rate= commercial_results["Tax_Rate"].values[0] / 100
@@ -526,35 +531,48 @@ class WaccPredictor:
     
 
 
-    def calculate_cost_components(self, data, sources, concessionality):
+    def calculate_cost_components(self, data, sources, concessionality, currency_risk_premium, currency_risk=None, merchant_risk=None):
 
         # Set up dataframe
         debt_cost_components_df = pd.DataFrame(index=sources, columns=[
             'Country code', 'Risk Free Rate', 'Country Risk Premium', 'Country Default Spread', 
-            'Equity Risk Premium', 'Technology Risk Premium', 'Immaturity premium', 'Concessionality'
+            'Equity Risk Premium', 'Technology Risk Premium', 'Immaturity Premium', 'Concessionality', "Merchant Risk"
         ])
         
         equity_cost_components_df = pd.DataFrame(index=sources, columns=[
             'Country code', 'Risk Free Rate', 'Country Risk Premium', 'Country Default Spread', 
-            'Equity Risk Premium', 'Technology Risk Premium', 'Immaturity premium', 'Concessionality'
+            'Equity Risk Premium', 'Technology Risk Premium', 'Immaturity Premium', "Merchant Risk", 'Concessionality'
         ])
         equity_weighting = 1.35
         if concessionality == "Commercial Rate":
             concessionality = 0
+        if merchant_risk:
+            merchant_risk = 2
+        else:
+            merchant_risk = 0
+        merchant_risk_weighting = 1.5
+        if currency_risk:
+            currency_risk_premium = currency_risk_premium
+        else:
+            currency_risk_premium = 0
         
-        # For each source, set the cost components
+        # For each source, set the debt cost components
         for source in sources:
             if source == "International Commercial":
                 debt_cost_components_df.loc[source, 'Country code'] = data["Country code"].values[0]
                 debt_cost_components_df.loc[source, 'Risk Free Rate'] = data["Risk_Free"].values[0]
                 debt_cost_components_df.loc[source, 'Country Default Spread'] = data["CDS"].values[0]
                 debt_cost_components_df.loc[source, 'Technology Risk Premium'] = data["Tech_Premium"].values[0]
+                debt_cost_components_df.loc[source, 'Merchant Risk'] = merchant_risk
+                debt_cost_components_df.loc[source, 'Currency Risk Premium'] = currency_risk_premium
             elif source == "International Public":
                 debt_cost_components_df.loc[source, 'Country code'] = data["Country code"].values[0]
                 debt_cost_components_df.loc[source, 'Risk Free Rate'] = data["Risk_Free"].values[0]
                 debt_cost_components_df.loc[source, 'Country Default Spread'] = data["CDS"].values[0]
                 debt_cost_components_df.loc[source, 'Technology Risk Premium'] = data["Tech_Premium"].values[0]
                 debt_cost_components_df.loc[source, 'Concessionality'] = -1 * float(concessionality)
+                debt_cost_components_df.loc[source, 'Merchant Risk'] = merchant_risk
+                debt_cost_components_df.loc[source, 'Currency Risk Premium'] = currency_risk_premium
             elif source == "Domestic Public":
                 debt_cost_components_df.loc[source, 'Country code'] = data["Country code"].values[0]
                 debt_cost_components_df.loc[source, 'Risk Free Rate'] = data["Risk_Free"].values[0]
@@ -565,6 +583,7 @@ class WaccPredictor:
                 debt_cost_components_df.loc[source, 'Country Default Spread'] = data["CDS"].values[0]
                 debt_cost_components_df.loc[source, 'Technology Risk Premium'] = data["Tech_Premium"].values[0]
                 debt_cost_components_df.loc[source, 'Immaturity Premium'] = data["Lenders Margin"].values[0]
+                debt_cost_components_df.loc[source, 'Merchant Risk'] = merchant_risk
         
         # For equity cost components
         for source in sources:
@@ -574,6 +593,8 @@ class WaccPredictor:
                 equity_cost_components_df.loc[source, 'Equity Risk Premium'] = data["ERP"].values[0]
                 equity_cost_components_df.loc[source, 'Country Default Spread'] = data["CDS"].values[0] * equity_weighting
                 equity_cost_components_df.loc[source, 'Technology Risk Premium'] = data["Tech_Premium"].values[0]
+                equity_cost_components_df.loc[source, 'Merchant Risk'] = merchant_risk * merchant_risk_weighting
+                equity_cost_components_df.loc[source, 'Currency Risk Premium'] = currency_risk_premium
             elif source == "International Public":
                 equity_cost_components_df.loc[source, 'Country code'] = data["Country code"].values[0]
                 equity_cost_components_df.loc[source, 'Risk Free Rate'] = data["Risk_Free"].values[0]
@@ -581,6 +602,8 @@ class WaccPredictor:
                 equity_cost_components_df.loc[source, 'Technology Risk Premium'] = data["Tech_Premium"].values[0]
                 equity_cost_components_df.loc[source, 'Equity Risk Premium'] = data["ERP"].values[0]
                 equity_cost_components_df.loc[source, 'Concessionality'] = -1 * float(concessionality)
+                equity_cost_components_df.loc[source, 'Merchant Risk'] = merchant_risk * merchant_risk_weighting
+                equity_cost_components_df.loc[source, 'Currency Risk Premium'] = currency_risk_premium
             elif source == "Domestic Public":
                 equity_cost_components_df.loc[source, 'Country code'] = data["Country code"].values[0]
                 equity_cost_components_df.loc[source, 'Risk Free Rate'] = data["Risk_Free"].values[0]
@@ -592,6 +615,7 @@ class WaccPredictor:
                 equity_cost_components_df.loc[source, 'Technology Risk Premium'] = data["Tech_Premium"].values[0]
                 equity_cost_components_df.loc[source, 'Immaturity Premium'] = float(data["Lenders Margin"].values[0])
                 equity_cost_components_df.loc[source, 'Equity Risk Premium'] = data["ERP"].values[0]
+                equity_cost_components_df.loc[source, 'Merchant Risk'] = merchant_risk * merchant_risk_weighting
 
         # Merge the DataFrames with prefixed indices
         debt_cost_components_df.index = "Debt - " + debt_cost_components_df.index

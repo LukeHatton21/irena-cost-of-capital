@@ -300,3 +300,148 @@ class WaccCalculator:
         converted_value = ((1 + value) * (1 + local_inflation_compound.values[0]) / (1 + USD_inflation_compound.values[0]) * (1 + expected_fx_depreciation.values[0]))  - 1
 
         return converted_value
+
+
+    def estimate_currency_risk_premium(
+    self,
+    country_code,
+    year,
+    lookback=20,
+    risk_aversion=0.5
+):
+        """
+        Estimate a currency risk premium based on annual excess depreciation
+        beyond what would be implied by relative inflation versus USD.
+
+        Methodology
+        -----------
+        For each year n in the historical sample:
+
+            C_inflation,n = ((1 + I_loc,n) / (1 + I_hard,n)) - 1
+            C_dep,n       = (E_n - E_n-1) / E_n-1
+            C_exc_dep,n   = C_dep,n - C_inflation,n
+
+        The currency risk premium is then estimated as:
+
+            mean(C_exc_dep) + risk_aversion * std(C_exc_dep)
+
+        Parameters
+        ----------
+        country_code : str
+            Country code of the local currency.
+        year : int or str
+            Final year in the estimation sample.
+        lookback : int, default=20
+            Number of annual excess depreciation observations to use.
+            For example, if year=2025 and lookback=20, the method uses
+            annual observations from 2006 to 2025, requiring exchange-rate
+            data from 2005 to 2025.
+        risk_aversion : float, default=0.5
+            Stress multiplier applied to the standard deviation of excess depreciation.
+
+        Returns
+        -------
+        dict
+            Dictionary containing summary statistics and the annual excess
+            depreciation series used in the estimation.
+        """
+
+        inflation = self.inflation
+        exchange_rates = self.exchange_rates
+        year = int(year)
+
+        # Extract inflation rows
+        hard_inflation = inflation.loc[inflation["Country code"] == "USA"]
+        local_inflation = inflation.loc[inflation["Country code"] == country_code]
+
+        if hard_inflation.empty:
+            raise ValueError("No inflation data found for hard currency country code 'USA'")
+        if local_inflation.empty:
+            raise ValueError(f"No inflation data found for country code: {country_code}")
+
+        # Extract exchange-rate row
+        local_exchange_rates = exchange_rates.loc[
+            exchange_rates["Country code"] == country_code
+        ]
+
+        if local_exchange_rates.empty:
+            raise ValueError(f"No exchange-rate data found for country code: {country_code}")
+
+        # Annual observations for n = year-lookback+1 to year
+        observation_years = list(range(year - lookback + 1, year + 1))
+
+        records = []
+
+        for n in observation_years:
+            inflation_col = str(n)
+            er_prev_col = f"ER_{n-1}"
+            er_curr_col = f"ER_{n}"
+
+            # Validate required columns
+            missing_inflation_cols = [
+                col for col in [inflation_col] if col not in inflation.columns
+            ]
+            missing_er_cols = [
+                col for col in [er_prev_col, er_curr_col] if col not in exchange_rates.columns
+            ]
+
+            if missing_inflation_cols:
+                raise ValueError(f"Missing inflation column(s): {missing_inflation_cols}")
+            if missing_er_cols:
+                raise ValueError(f"Missing exchange-rate column(s): {missing_er_cols}")
+
+            # Inflation values
+            i_loc = local_inflation[inflation_col].values[0]
+            i_hard = hard_inflation[inflation_col].values[0]
+
+            if pd.isna(i_loc) or pd.isna(i_hard):
+                raise ValueError(f"Missing inflation value(s) for year {n}")
+
+            # Convert percentage inflation to decimal
+            i_loc = i_loc / 100
+            i_hard = i_hard / 100
+
+            # Inflation-implied depreciation
+            c_inflation = ((1 + i_loc) / (1 + i_hard)) - 1
+
+            # Exchange-rate depreciation against USD
+            e_prev = local_exchange_rates[er_prev_col].values[0]
+            e_curr = local_exchange_rates[er_curr_col].values[0]
+
+            if pd.isna(e_prev) or pd.isna(e_curr):
+                raise ValueError(
+                    f"Missing exchange-rate value(s) for {country_code} in years {n-1} or {n}"
+                )
+
+            c_dep = (e_curr - e_prev) / e_prev
+
+            # Excess depreciation
+            c_exc_dep = c_dep - c_inflation
+
+            records.append({
+                "year": n,
+                "local_inflation": i_loc,
+                "hard_inflation": i_hard,
+                "inflation_implied_depreciation": c_inflation,
+                "actual_depreciation": c_dep,
+                "excess_depreciation": c_exc_dep
+            })
+
+        results = pd.DataFrame(records)
+
+        mean_excess_depreciation = results["excess_depreciation"].mean()
+        std_excess_depreciation = results["excess_depreciation"].std(ddof=1)
+
+        currency_risk_premium = (risk_aversion * std_excess_depreciation
+        )
+
+        return {
+            "country_code": country_code,
+            "year": year,
+            "lookback": lookback,
+            "risk_aversion": risk_aversion,
+            "mean_excess_depreciation": mean_excess_depreciation,
+            "std_excess_depreciation": std_excess_depreciation,
+            "currency_risk_premium": currency_risk_premium,
+            "excess_depreciation_series": results
+        }

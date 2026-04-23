@@ -38,15 +38,20 @@ with col1:
         year = st.selectbox(
                 "Year", ("2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "2028", "2029", "2030"), 
                 index=9, key="Year", placeholder="Select Year...")
+        country_selection = st.selectbox(
+        "Country", options=country_names, 
+        index=2, placeholder="Select Country of Interest...", key="CountryProjections")
+        country_selection = visualiser.crp_dictionary.get(country_selection)
+        merchant_risk = st.checkbox("Exposure to Merchant Risk", key="MerchantRisk")
 with col2:
         technology = st.selectbox(
                 "Displayed Technology", tech_names, 
                 index=7, placeholder="Select Technology...", key="Technology")
         technology = visualiser.tech_dictionary.get(technology)
-country_selection = st.selectbox(
-        "Country", options=country_names, 
-        index=2, placeholder="Select Country of Interest...", key="CountryProjections")
-country_selection = visualiser.crp_dictionary.get(country_selection)
+        concessionality = st.selectbox(
+    "Select Level of Concessionality..(%)", ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Commercial Rate"), index=5, key="IPF", placeholder="Select financing terms for international public finance...(%)")
+        currency_risk = st.checkbox("Exposure to Currency Risk", key="CurrencyRisk")
+
 
 # Set out input tabs and calculate the share of cost of capital
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["💸 Blended Finance", "📊 WACC", "🌐 Underlying Costs", "🥇Comparison", "🔭Projections", "🛠️Technologies", "📝 About"])
@@ -54,13 +59,11 @@ yearly_waccs = wacc_predictor.calculate_historical_waccs(year, technology)
 with tab1:
     st.title("Ratio of Blended Finance")
     st.write(f"Finance for energy projects can come from a range of sources, including both domestic and international financiers. It can also be directed through commercial or public sources, with some role for grant funding in certain markets. Set the blended finance ratios for {technology} in {year} here.")
-    concessionality = st.selectbox(
-        "Select Financing Terms for International Public Finance...(%)", ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Commercial Rate"), index=5, key="IPF", placeholder="Select financing terms for international public finance...(%)")
     shares_df = visualiser.vertical_sliders()
 with tab2:
     st.title("Weighted Cost of Capital")
     df, overall_cost, breakdown = wacc_predictor.calculate_weighted_average(shares_df=shares_df, year=year, technology=technology, 
-                                                  country_code=country_selection, concessionality=concessionality)
+                                                  country_code=country_selection, concessionality=concessionality, merchant_risk=merchant_risk, currency_risk=currency_risk)
     #df = pd.DataFrame(data={"source": ["International Commercial", "International Public", "Domestic Commercial", "Domestic Public", "Grant"], "Share": [25, 25, 20, 25, 5], "Cost of Capital": [10, 7, 8, 9, 0.1]})
     visualiser.show_source_average(df, overall=overall_cost)
 with tab3:
