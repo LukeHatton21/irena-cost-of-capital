@@ -255,7 +255,81 @@ class WaccCalculator:
         return tech_premium
     
 
-    def convert_currencies(self, value, country_code, year):
+    def convert_currencies_usd_to_local(self, value, country_code, year):
+
+        # Extract inflation data
+        inflation = self.inflation
+
+        # Extract USD and local inflation
+        USD_inflation = inflation.loc[inflation["Country code"] == "USA"]
+        local_inflation = inflation.loc[inflation["Country code"] == country_code]
+
+        # Cap year at 2025 for forward-looking data
+        forward_year = min(int(year), 2025)
+        historical_year = int(year)
+
+        # ── Forward Inflation ──────────────────────────────────────────────────────
+
+        # Calculate 5-year compounded forward USD inflation
+        future_USD_inflation = USD_inflation[[str(forward_year), str(forward_year+1), str(forward_year+2), str(forward_year+3), str(forward_year+4)]]
+        multipliers = ((100 + future_USD_inflation) / 100).prod(axis=1)
+        USD_inflation_compound = multipliers ** (1 / 5) - 1
+
+        # Calculate 5-year compounded forward local inflation
+        future_local_inflation = local_inflation[[str(forward_year), str(forward_year+1), str(forward_year+2), str(forward_year+3), str(forward_year+4)]]
+        multipliers = ((100 + future_local_inflation) / 100).prod(axis=1)
+        local_inflation_compound = multipliers ** (1 / 5) - 1
+
+        # ── Historical FX Depreciation ─────────────────────────────────────────────
+
+        # Extract historical exchange rates (local per USD)
+        local_exchange_rates = self.exchange_rates[[
+            "Country code",
+            "ER_" + str(historical_year - 4),
+            "ER_" + str(historical_year - 3),
+            "ER_" + str(historical_year - 2),
+            "ER_" + str(historical_year - 1),
+            "ER_" + str(historical_year)
+        ]]
+        local_exchange_rates = local_exchange_rates.loc[local_exchange_rates["Country code"] == country_code]
+
+        # Raw FX depreciation over 5 years
+        depreciation = local_exchange_rates["ER_" + str(historical_year)] / local_exchange_rates["ER_" + str(historical_year - 4)]
+
+        # ── Historical Inflation ───────────────────────────────────────────────────
+
+        # 5-year compounded historical USD inflation
+        historic_USD_inflation = USD_inflation[[str(historical_year-4), str(historical_year-3), str(historical_year-2), str(historical_year-1), str(historical_year)]]
+        multipliers = ((100 + historic_USD_inflation) / 100).prod(axis=1)
+        USD_historic_inflation = multipliers ** (1 / 5) - 1
+
+        # 5-year compounded historical local inflation
+        historic_local_inflation = local_inflation[[str(historical_year-4), str(historical_year-3), str(historical_year-2), str(historical_year-1), str(historical_year)]]
+        multipliers = ((100 + historic_local_inflation) / 100).prod(axis=1)
+        local_historic_inflation = multipliers ** (1 / 5) - 1
+
+        # ── Excess Depreciation ────────────────────────────────────────────────────
+
+        # Isolate depreciation beyond what PPP would predict
+        # PPP-implied move = (1 + local_inflation) / (1 + USD_inflation)
+        ppp_implied = (1 + local_historic_inflation.values[0]) / (1 + USD_historic_inflation.values[0])
+        expected_fx_depreciation = (depreciation.values[0] / ppp_implied) - 1
+
+        # ── Convert USD Rate to Local ──────────────────────────────────────────────
+
+        # Invert the inflation ratio and apply excess depreciation
+        # USD → Local: higher local inflation increases local rate
+        # Excess depreciation further increases local rate
+        converted_value = (
+            (1 + value)
+            * (1 + local_inflation_compound.values[0])   # local inflation increases local rate
+            / (1 + USD_inflation_compound.values[0])     # USD inflation decreases local rate
+            * (1 + expected_fx_depreciation)             # structural FX weakness adds to local rate
+        ) - 1
+
+        return converted_value
+
+    def convert_currencies_local_usd(self, value, country_code, year):
 
         # Extract inflation
         inflation = self.inflation
@@ -307,7 +381,7 @@ class WaccCalculator:
     country_code,
     year,
     lookback=20,
-    risk_aversion=0.5
+    risk_aversion=0.1
 ):
         """
         Estimate a currency risk premium based on annual excess depreciation
